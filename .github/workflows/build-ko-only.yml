@@ -1,0 +1,68 @@
+name: Build KO Only 5.10.209
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ko-only:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout gen4m + Module.symvers + config
+        uses: actions/checkout@v4
+        with:
+          path: gen4m
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache cpio curl flex git libelf-dev libssl-dev lz4 pahole python3 rsync
+
+      - name: Checkout kernel 7c6bbcca33e1
+        run: |
+          git clone https://android.googlesource.com/kernel/common kernel_src
+          cd kernel_src
+          git checkout --detach 7c6bbcca33e1
+          git log --oneline -1
+
+      - name: Setup AOSP Clang r416183b
+        run: |
+          mkdir -p clang-aosp
+          curl -L --fail --retry 3 -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android12-release/clang-r416183b.tar.gz"
+          tar -xzf clang.tar.gz -C clang-aosp
+          rm clang.tar.gz
+          echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
+          clang --version
+
+      - name: Build KO Only - Tanpa Image
+        run: |
+          set -e
+          cd kernel_src
+          export ARCH=arm64
+          mkdir -p out
+          # 1. Pake config yang lu upload tadi
+          cp $GITHUB_WORKSPACE/gen4m/config out/.config
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j4
+          # 2. Pake Module.symvers yang lu upload tadi - INI KUNCI CRC NYA
+          cp $GITHUB_WORKSPACE/gen4m/Module.symvers out/Module.symvers
+          cp $GITHUB_WORKSPACE/gen4m/Module.symvers $GITHUB_WORKSPACE/gen4m/Module.symvers.bak || true
+          # 3. Build 4 modul doang
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=net/wireless modules
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=net/mac80211 modules
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=drivers/net/wireless/mediatek/mt7601u modules
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=$GITHUB_WORKSPACE/gen4m modules
+          # 4. Kumpulin
+          mkdir -p $GITHUB_WORKSPACE/out_ko
+          find out -name "cfg80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          find out -name "mac80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          find out -name "mt7601u.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          find $GITHUB_WORKSPACE/gen4m -name "*.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          ls -lh $GITHUB_WORKSPACE/out_ko/
+          modinfo $GITHUB_WORKSPACE/out_ko/*.ko | grep -E "filename|vermagic"
+
+      - name: Upload KO
+        uses: actions/upload-artifact@v4
+        with:
+          name: ko-only-5.10.209
+          path: out_ko/
+          retention-days: 14
