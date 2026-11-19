@@ -1,4 +1,4 @@
-name: Build 5.10 gen4m + mt7601u
+name: Build 5.10.209 r4 gen4m + mt7601u
 
 on:
   workflow_dispatch:
@@ -12,30 +12,34 @@ jobs:
         with:
           path: gen4m
 
-      - name: Checkout kernel Google 5.10
+      - name: Checkout kernel Google 5.10.209 r4
         run: |
-          git clone --depth 1 -b android12-5.10 https://android.googlesource.com/kernel/common common
-          git clone --depth 1 -b android12-5.10 https://android.googlesource.com/kernel/prebuilts/clang/host/linux-x86 prebuilts-clang
-          git clone --depth 1 -b android12-5.10 https://android.googlesource.com/kernel/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 prebuilts-gcc
-
-      - name: Setup env
-        run: |
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-android-" >> $GITHUB_ENV
+          git clone https://android.googlesource.com/kernel/common common
+          cd common
+          git checkout android12-5.10-2024-01_r4
+          echo "=== CEK VERSI ==="
+          head -n 5 Makefile
+          cd ..
+          git clone --depth 1 https://android.googlesource.com/kernel/prebuilts/clang/host/linux-x86 prebuilts-clang
+          git clone --depth 1 https://android.googlesource.com/kernel/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 prebuilts-gcc
 
       - name: Build modules 1 paket
         run: |
           cd common
-          # Pake defconfig GKI 5.10, bukan defconfig HP lu dulu, biar gampang ke-build
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          export PATH=$GITHUB_WORKSPACE/prebuilts-clang/bin:$GITHUB_WORKSPACE/prebuilts-gcc/bin:$PATH
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+
           make ARCH=arm64 O=out gki_defconfig
           make ARCH=arm64 O=out modules_prepare -j$(nproc)
 
-          # 1. cfg80211 + mac80211 + mt7601u dari Google
+          # 1. cfg80211 + mac80211 + mt7601u dari Google 5.10.209 r4
           make ARCH=arm64 O=out M=net/wireless modules -j$(nproc)
           make ARCH=arm64 O=out M=net/mac80211 modules -j$(nproc)
           make ARCH=arm64 O=out M=drivers/net/wireless/mediatek/mt7601u modules -j$(nproc)
 
-          # 2. Copy Module.symvers ke gen4m biar CRC sama
+          # 2. Copy Module.symvers ke gen4m biar CRC sama semua
           cp out/Module.symvers ../gen4m/
           cp out/.config ../gen4m/ || true
 
@@ -47,12 +51,8 @@ jobs:
           find out -name "cfg80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
           find out -name "mac80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
           find out -name "mt7601u.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
-          find $GITHUB_WORKSPACE/gen4m -name "wlan_drv_mt6789.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \; || find $GITHUB_WORKSPACE/gen4m -name "*.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          find $GITHUB_WORKSPACE/gen4m -name "*.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          echo "=== HASIL ==="
           ls -lh $GITHUB_WORKSPACE/out_ko/
-          modinfo $GITHUB_WORKSPACE/out_ko/*.ko | grep -E "filename|vermagic"
-
-      - name: Upload KO
-        uses: actions/upload-artifact@v4
-        with:
-          name: ko-5.10.209
-          path: out_ko/
+          echo "=== VERMAGIC ==="
+          modinfo $GITHUB_WORKSPACE/out_
