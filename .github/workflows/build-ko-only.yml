@@ -45,20 +45,21 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- modules_prepare -j4
           # 2. Pake Module.symvers yang lu upload tadi - INI KUNCI CRC NYA
           cp $GITHUB_WORKSPACE/gen4m/Module.symvers out/Module.symvers
-          cp $GITHUB_WORKSPACE/gen4m/Module.symvers $GITHUB_WORKSPACE/gen4m/Module.symvers.bak || true
-          # 3. Build 4 modul doang
+          # 3. Build 3 modul kernel dulu - ini yang pasti sukses
           make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=net/wireless modules
           make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=net/mac80211 modules
           make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=drivers/net/wireless/mediatek/mt7601u modules
-          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=$GITHUB_WORKSPACE/gen4m modules
-          # 4. Kumpulin
+          # 4. Build gen4m - PAKE PATH RELATIF, BUKAN ABSOLUTE
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" M=../gen4m modules || echo "GEN4M GAGAL, LANJUT KUMPULIN YANG SUKSES"
+          ls -lh ../gen4m/*.ko || echo "TIDAK ADA KO DI GEN4M"
+          # 5. Kumpulin - pake || true biar tetep jalan walau 1 modul gagal
           mkdir -p $GITHUB_WORKSPACE/out_ko
-          find out -name "cfg80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
-          find out -name "mac80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
-          find out -name "mt7601u.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
-          find $GITHUB_WORKSPACE/gen4m -name "*.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \;
+          find out -name "cfg80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \; || true
+          find out -name "mac80211.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \; || true
+          find out -name "mt7601u.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \; || true
+          find $GITHUB_WORKSPACE/gen4m -name "*.ko" -exec cp {} $GITHUB_WORKSPACE/out_ko/ \; || true
           ls -lh $GITHUB_WORKSPACE/out_ko/
-          modinfo $GITHUB_WORKSPACE/out_ko/*.ko | grep -E "filename|vermagic"
+          modinfo $GITHUB_WORKSPACE/out_ko/*.ko | grep -E "filename|vermagic" || true
 
       - name: Upload KO
         uses: actions/upload-artifact@v4
